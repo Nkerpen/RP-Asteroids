@@ -1,13 +1,7 @@
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\game.frag
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\game.vert
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\instanced.frag
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\instanced.vert
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\phong.frag
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\phong.vert
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\post.frag
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\post.vert
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\skybox.frag
-C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\skybox.vert
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\textures\grass.png
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\textures\image.png
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\textures\image2.jpg
