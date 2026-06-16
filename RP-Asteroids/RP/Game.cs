@@ -1,4 +1,5 @@
-﻿using System.Drawing;
+﻿using System;
+using System.Collections.Generic;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
@@ -12,258 +13,211 @@ namespace RP
     {
         private float _time = 0f;
 
-        private Mesh _objectMesh;
-        private Mesh _planeMesh;
-        private Mesh _skyboxMesh;
-        private Mesh _postMesh;
-        private Mesh _instancedMesh;
+        // Elementos Principais do Jogo
+        private Mesh _shipMesh;
+        private Transform _shipTransform = new();
+        private Vector3 _shipVelocity = Vector3.Zero;
+        private List<Asteroid> _asteroids = new List<Asteroid>();
+        private Random _random = new Random();
+        
+        // Parâmetros de Movimentação da Nave (Física de Inércia)
+        private float _shipRotationSpeed = 220f; // Graus por segundo
+        private float _shipThrust = 12f;
+        private float _drag = 0.65f; // Fator de atrito espacial
 
-        private Transform _objectTransform = new();
-        private Transform _planeTransform = new();
-        private Transform _skyboxTransform = new();
-
-        private Material _skyboxMaterial;
-        private Material _planeMaterial;
-        private Material _objectMaterial;
+        // Materiais e Pipeline de Pós-Processamento
+        private Material _gameMaterial; // Material unificado dos objetos em cena
         private Material _postMaterial;
-        private Material _instancedMaterial;
-
-        private readonly Camera _camera;
-        private readonly DirectionalLight _directionalLight = new();
-
-        private RenderTarget _shadowMap;
+        private Mesh _postMesh;
         private RenderTarget _postTarget;
 
-        private int _instanceCount = 250000;
+        private readonly Camera _camera;
 
-        public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings) : base(gameWindowSettings, nativeWindowSettings)
+        // Limites de tela calculados dinamicamente para o Screen Wrap
+        private float _limitX;
+        private float _limitY;
+
+        public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings) 
+            : base(gameWindowSettings, nativeWindowSettings)
         {
-            _objectMesh = Primitive.CreateCube(1f);
-            _planeMesh = Primitive.CreatePlane(100f);
-            _skyboxMesh = Primitive.CreateSphere(10f);
+            // Ajuste da Câmera: Ortográfica fixa para o plano bidimensional XY
+            float cameraHeight = 20f;
+            float aspect = (float)Size.X / Size.Y;
+            _camera = new OrthographicCamera(cameraHeight * aspect, cameraHeight);
+            _camera.position = new Vector3(0f, 0f, 10f); // Recuada no eixo Z olhando para a origem
+            _camera.rotation = Vector3.Zero;
+
+            // Define os limites matemáticos exatos da Viewport ortográfica
+            _limitY = cameraHeight / 2f;
+            _limitX = _limitY * aspect;
+
+            // Criação das geometrias essenciais
+            _shipMesh = Primitive.CreateCone(0.4f, 1.2f, 3); // Cone de 3 lados atua perfeitamente como triângulo clássico
             _postMesh = Primitive.CreatePost();
-
-            {// mesh customizada para uso com instancing
-                float[] vertices = [
-                    -0.5f, 0f, 0f,  0f, 1f, 0f,  0f, 0f,
-                     0.5f, 0f, 0f,  0f, 1f, 0f,  1f, 0f,
-                     0.5f, 1f, 0f,  0f, 1f, 0f,  1f, 1f,
-                    -0.5f, 1f, 0f,  0f, 1f, 0f,  0f, 1f,
-                ];
-
-                uint[] indices = [
-                    0, 1, 2,
-                    0, 2, 3,
-                ];
-
-                _instancedMesh = new(vertices, indices);
-
-                Matrix4[] modelMatrices = new Matrix4[_instanceCount];
-                Vector3[] colors = new Vector3[_instanceCount];
-                Random r = new();
-                float areaSize = 100f;
-                for (int i = 0; i < _instanceCount; i++)
-                {
-                    Transform t = new();
-                    t.position = new Vector3(
-                        r.NextSingle() * areaSize - areaSize / 2f,
-                        0f,
-                        r.NextSingle() * areaSize - areaSize / 2f
-                    );
-                    t.scale.Y = 0.5f + r.NextSingle() * 0.5f;
-                    t.rotation.Y = r.NextSingle() * 360f;
-
-                    modelMatrices[i] = t.ModelMatrix;// variação de posição
-                    colors[i] = new Vector3(1f) * (r.NextSingle() * 0.4f + 0.6f);// variação de cor
-                }
-                _instancedMesh.SetInstanceData(3, modelMatrices);
-                _instancedMesh.SetInstanceData(7, colors);
-            }
-
-            _objectTransform.position.Y = 0.5f;
-
-            _shadowMap = RenderTarget.CreateDepth(4096, 4096);
             _postTarget = RenderTarget.CreateColor(Size.X, Size.Y);
 
-            //Para exibir os elementos na tela, é preciso que os dados sejam processados na placa de vídeo.
-            //É aí que entram os shaders, programas que serão executados diretamente na GPU, escritos em
-            //linguagem GLSL.
-
-            //Primeiro, criamos um vertex shader, que vai ser executado para cada vértice da nossa malha,
-            //ele é responsável por determinar a posição de cada triângulo na tela.
-            Shader vertexShader = VertexShader.LoadFromFile("./assets/shaders/phong.vert");
-
-            //Em seguida, criamos o fragment shader, responsável pela cor de cada fragmento/pixel dos triângulos.
-            Shader fragmentShader = FragmentShader.LoadFromFile("./assets/shaders/phong.frag");
-
-            //Existem outros tipos de shader, mas o vertex shader e fragment shader são os únicos obrigatórios
-
-            //O passo final é juntar os 2 shaders compilados em um único programa, garantindo a compatibilidade
-            //entre os 2.
-            ShaderProgram _shaderProgram = new ShaderProgram(vertexShader, fragmentShader);
-            _shaderProgram.Use();
-
-            ShaderProgram _skyboxProgram = new ShaderProgram(
-                VertexShader.LoadFromFile("./assets/shaders/skybox.vert"),
-                FragmentShader.LoadFromFile("./assets/shaders/skybox.frag")
+            // Spawn de 5 asteroides iniciais em posições e direções aleatórias
+            for (int i = 0; i < 5; i++)
+            {
+                Vector3 pos = new Vector3(
+                    ((float)_random.NextDouble() * 2f - 1f) * _limitX,
+                    ((float)_random.NextDouble() * 2f - 1f) * _limitY,
+                    0f
+            );
+    
+                Vector3 vel = new Vector3(
+                    ((float)_random.NextDouble() * 2f - 1f) * 3f, // Velocidade X aleatória
+                    ((float)_random.NextDouble() * 2f - 1f) * 3f, // Velocidade Y aleatória
+                    0f
             );
 
-            ShaderProgram _postProgram = new ShaderProgram(
+                _asteroids.Add(new Asteroid(pos, vel, 1.5f)); // Raio inicial de 1.5
+            }
+
+            // Vinculação dos novos Shaders customizados do GDD
+            ShaderProgram gameProgram = new ShaderProgram(
+                VertexShader.LoadFromFile("./assets/shaders/game.vert"),
+                FragmentShader.LoadFromFile("./assets/shaders/game.frag")
+            );
+
+            ShaderProgram postProgram = new ShaderProgram(
                 VertexShader.LoadFromFile("./assets/shaders/post.vert"),
                 FragmentShader.LoadFromFile("./assets/shaders/post.frag")
             );
 
-            ShaderProgram _instancedProgram = new ShaderProgram(
-                VertexShader.LoadFromFile("./assets/shaders/instanced.vert"),
-                FragmentShader.LoadFromFile("./assets/shaders/instanced.frag")
-            );
+            // Configuração e parametrização limpa de materiais
+            _gameMaterial = new Material(gameProgram);
+            _gameMaterial.cull = false; // Desativado para garantir visibilidade plena do triângulo no plano 2D
 
-            //_camera = new OrthographicCamera(Size.X / 100f, Size.Y / 100f);
-            _camera = new PerspectiveCamera(90f, (float)Size.X / Size.Y);
-            _camera.position.Z = 4.5f;
-
-            _directionalLight.rotation.X = -90f;
-
-            _skyboxMaterial = new(_skyboxProgram);
-            _skyboxMaterial.cullMode = TriangleFace.Front;
-            _skyboxMaterial.depthWrite = false;
-
-            _planeMaterial = new(_shaderProgram);
-            _planeMaterial.SetVec3("u_Color", 0.6f, 0.5f, 0.3f);
-            _planeMaterial.SetFloat("u_Smoothness", 0.1f);
-            _planeMaterial.SetTexture("u_Texture", Texture.Default);
-
-            _objectMaterial = new(_shaderProgram);
-            _objectMaterial.SetVec3("u_Color", 1f, 0f, 0f);
-            _objectMaterial.SetFloat("u_Smoothness", 1f);
-            _objectMaterial.SetTexture("u_Texture", Texture.Default);
-
-            _postMaterial = new(_postProgram);
+            _postMaterial = new Material(postProgram);
             _postMaterial.SetTexture("u_Texture", _postTarget.Texture);
 
-            TextureSettings settings = TextureSettings.Default;
-            settings.AddSetting(TextureParameterName.TextureWrapS, (int)TextureWrapMode.Clamp);
-            settings.AddSetting(TextureParameterName.TextureWrapT, (int)TextureWrapMode.Clamp);
-            Texture grassTexture = new Texture("./assets/textures/grass.png", settings);
-
-            _instancedMaterial = new(_instancedProgram);
-            _instancedMaterial.SetTexture("u_Texture", grassTexture);
-            _instancedMaterial.SetVec3("u_Color", 1f, 1f, 1f);
-            _instancedMaterial.SetFloat("u_Smoothness", 0.1f);
-            _instancedMaterial.cull = false;
-
-            CursorState = CursorState.Grabbed;
+            CursorState = CursorState.Normal;
         }
 
         protected override void OnUpdateFrame(FrameEventArgs args)
         {
             base.OnUpdateFrame(args);
-
             float delta = (float)args.Time;
 
-            // Movimentação da câmera, modo drone, em todas as direções.
-            float cameraSpeed = 5f;
-            if (KeyboardState.IsKeyDown(Keys.D))
-            {
-                _camera.position += _camera.Right * delta * cameraSpeed;
-            }
+            // --- PROCESSAMENTO DE INPUTS E MOVIMENTAÇÃO DA NAVE ---
+            // Rotação sobre o próprio eixo Z
             if (KeyboardState.IsKeyDown(Keys.A))
+                _shipTransform.rotation.Z += _shipRotationSpeed * delta;
+            if (KeyboardState.IsKeyDown(Keys.D))
+                _shipTransform.rotation.Z -= _shipRotationSpeed * delta;
+
+            // Propulsão frontal (Utiliza o vetor direcional local "Up" gerado pela rotação em Z)
+            bool isThrusting = KeyboardState.IsKeyDown(Keys.W) || KeyboardState.IsKeyDown(Keys.Up);
+            if (isThrusting)
             {
-                _camera.position -= _camera.Right * delta * cameraSpeed;
-            }
-            if (KeyboardState.IsKeyDown(Keys.E))
-            {
-                _camera.position += _camera.Up * delta * cameraSpeed;
-            }
-            if (KeyboardState.IsKeyDown(Keys.Q))
-            {
-                _camera.position -= _camera.Up * delta * cameraSpeed;
-            }
-            if (KeyboardState.IsKeyDown(Keys.W))
-            {
-                _camera.position += _camera.Forward * delta * cameraSpeed;
-            }
-            if (KeyboardState.IsKeyDown(Keys.S))
-            {
-                _camera.position -= _camera.Forward * delta * cameraSpeed;
+                _shipVelocity += _shipTransform.Up * _shipThrust * delta;
             }
 
-            // Rotação da câmera, modo drone, com limitação com a visão para cima e para baixo
-            _camera.rotation -= new Vector3(MouseState.Delta.Y, MouseState.Delta.X, 0f) * 0.3f;
-            _camera.rotation.X = MathF.Min(MathF.Max(_camera.rotation.X, -89f), 89f);
+            // Repasse do estado de aceleração para o Vertex Shader deformar a malha
+            _gameMaterial.Program.SetUniform("u_IsThrusting", isThrusting ? 1 : 0);
+
+            // Integração de Euler simples com amortecimento (Atrito)
+            _shipVelocity -= _shipVelocity * _drag * delta;
+            _shipTransform.position += _shipVelocity * delta;
+
+            // --- SISTEMA DE SCREEN WRAP ---
+            if (_shipTransform.position.X > _limitX)   _shipTransform.position.X = -_limitX;
+            if (_shipTransform.position.X < -_limitX)  _shipTransform.position.X = _limitX;
+            if (_shipTransform.position.Y > _limitY)   _shipTransform.position.Y = -_limitY;
+            if (_shipTransform.position.Y < -_limitY)  _shipTransform.position.Y = _limitY;
+
             if (KeyboardState.IsKeyDown(Keys.Escape))
             {
-                CursorState = CursorState.Normal;
+                Close();
+            }
+
+            foreach (var asteroid in _asteroids)
+            {
+                asteroid.Update(delta, _limitX, _limitY);
             }
         }
 
-        private void DrawScene(Camera camera, bool drawGrass = true)
+        private void DrawScene(Camera camera)
         {
-            //Determinamos a cor de limpeza da tela e, na sequência, pedimos pra limpar os canais de cor.
-            GL.ClearColor(0.0f, 0.3f, 0.5f, 1.0f);
+            // Fundo escuro absoluto de espaço de Arcade
+            GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            // Matrizes de visão e projeção, relacionadas à câmera
             camera.GlobalApply();
+            Material.SetGlobalFloat("u_Time", _time);
 
-            // Aqui, fazemos o desenho de cada transform presente
-            Material.SetGlobalTexture("u_ShadowMap", _shadowMap.Texture);
+            _gameMaterial.Use();
+            GL.Enable(EnableCap.CullFace);
 
-            _skyboxMaterial.Use();
-            _skyboxTransform.Apply(_skyboxMaterial);// envio das matrizes
-            _skyboxMesh.Draw();
+            // ==========================================
+            // 1. RENDERIZAÇÃO DA NAVE DO JOGADOR
+            // ==========================================
+            _gameMaterial.Program.SetUniform("u_IsAsteroid", 0);
+            _shipTransform.Apply(_gameMaterial);
 
-            GL.CullFace(TriangleFace.Back);
-            GL.DepthMask(true);
+            // Passada A: Desenha o casco traseiro expandido em Branco
+            GL.CullFace(TriangleFace.Front); // Oculta as faces da frente
+            _gameMaterial.Program.SetUniform("u_IsOutline", 1);
+            _shipMesh.Draw();
 
-            _planeMaterial.Use();
-            _planeTransform.Apply(_planeMaterial);// envio das matrizes
-            _planeMesh.Draw();
-            _objectMaterial.Use();
-            _objectTransform.Apply(_objectMaterial);// envio das matrizes
-            _objectMesh.Draw();
+            // Passada B: Desenha o preenchimento normal por cima
+            GL.CullFace(TriangleFace.Back); // Oculta as faces de trás (Padrão)
+            _gameMaterial.Program.SetUniform("u_IsOutline", 0);
+            _shipMesh.Draw();
 
-            if (drawGrass)
+
+            // ==========================================
+            // 2. RENDERIZAÇÃO DOS ASTEROIDES
+            // ==========================================
+            _gameMaterial.Program.SetUniform("u_IsAsteroid", 1);
+            foreach (var asteroid in _asteroids)
             {
-                _instancedMaterial.Use();
-                _instancedMesh.Draw(_instanceCount);
+                asteroid.transform.Apply(_gameMaterial);
+
+                // Passada A: Desenha o contorno do Asteroide
+                GL.CullFace(TriangleFace.Front);
+                _gameMaterial.Program.SetUniform("u_IsOutline", 1);
+                asteroid.mesh.Draw();
+
+                // Passada B: Desenha o centro do Asteroide
+                GL.CullFace(TriangleFace.Back);
+                _gameMaterial.Program.SetUniform("u_IsOutline", 0);
+                asteroid.mesh.Draw();
             }
         }
 
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
-
             float delta = (float)args.Time;
             _time += delta;
 
-            //_skyboxTransform.position = _camera.position;
-
             GL.Enable(EnableCap.DepthTest);
-            GL.Enable(EnableCap.CullFace);
-            GL.CullFace(TriangleFace.Back);
 
-            _directionalLight.GlobalApply();
-            _directionalLight.rotation.X += 1f * delta;
-
-            Camera shadowMapCamera = _directionalLight.GetLightMapCamera(_camera.position);
-            Material.SetGlobalMat4("u_Light", shadowMapCamera.ViewMatrix * shadowMapCamera.ProjectionMatrix);
-            Material.SetGlobalFloat("u_Time", _time);
-
-            _shadowMap.Use();
-            DrawScene(shadowMapCamera, false);
-
+            // PASSO 1: Captura o desenho da cena gráfica dentro do Render Target secundário
             _postTarget.Use();
             DrawScene(_camera);
 
+            // PASSO 2: Retorna ao Buffer de tela principal para aplicar o filtro de fragmento CRT
             RenderTarget.Reset(this);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            
             _postMaterial.Use();
             _postMesh.Draw();
 
-            //Como todos comandos de desenho são feitos em um buffer, ou tela, secundário, precisamos pedir
-            //que os buffers sejam trocados para que o novo desenho seja exibido ao usuário.
             SwapBuffers();
+        }
+
+        protected override void OnResize(ResizeEventArgs e)
+        {
+            base.OnResize(e);
+            GL.Viewport(0, 0, Size.X, Size.Y);
+            
+            // Recriação e vinculação dinâmica do buffer de pós-processamento para evitar distorções de escala
+            _postTarget.Destroy();
+            _postTarget = RenderTarget.CreateColor(Size.X, Size.Y);
+            _postMaterial.SetTexture("u_Texture", _postTarget.Texture);
         }
     }
 }
