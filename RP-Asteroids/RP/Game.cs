@@ -15,15 +15,22 @@ namespace RP
 
         // Elementos da Nave
         private Mesh _shipMesh;
+        private Mesh _debrisMesh;
         private Transform _shipTransform = new();
         private Vector3 _shipVelocity = Vector3.Zero;
         private float _shipRotationSpeed = 220f;
         private float _shipThrust = 12f;
         private float _drag = 0.65f;
-        private bool _isThrusting = false; // Guardamos o estado de aceleracao para o Shader
+        private bool _isThrusting = false;
 
         // Estado do Jogo
         private bool _isGameOver = false;
+        private int _score = 0;
+        private float _survivalTime = 0f; // Novo: Temporizador de sobrevivencia
+
+        // Spawner Progressivo
+        private float _spawnTimer = 0f;
+        private float _spawnInterval = 4.0f;
 
         // Destrocos da Nave (Explosao)
         private List<Transform> _shipDebris = new List<Transform>();
@@ -40,19 +47,19 @@ namespace RP
         // Materiais e Post-Processing
         private Material _gameMaterial;
         private Material _postMaterial;
+        private Material _thrusterMaterial;
         private Mesh _postMesh;
         private RenderTarget _postTarget;
 
         private readonly Camera _camera;
 
-        // Limites da tela para o Screen Wrap
+        // Limites da tela
         private float _limitX;
         private float _limitY;
 
         public Game(GameWindowSettings gameWindowSettings, NativeWindowSettings nativeWindowSettings)
             : base(gameWindowSettings, nativeWindowSettings)
         {
-            // 1. Configuracao da Camera Ortografica
             float cameraHeight = 20f;
             float aspect = (float)Size.X / Size.Y;
             _camera = new OrthographicCamera(cameraHeight * aspect, cameraHeight);
@@ -62,15 +69,14 @@ namespace RP
             _limitY = cameraHeight / 2f;
             _limitX = _limitY * aspect;
 
-            // 2. Criacao das Geometrias
-            _shipMesh = Primitive.CreateCone(0.4f, 1.2f, 3);
+            //_shipMesh = Primitive.CreateCone(0.4f, 1.2f, 3);
+            _shipMesh = CreateCustomShipMesh();
+            _debrisMesh = Primitive.CreateCone(0.5f, 1.0f, 3);
             _postMesh = Primitive.CreatePost();
             _postTarget = RenderTarget.CreateColor(Size.X, Size.Y);
 
-            // MALHA DO PROJETIL: Inicializada AQUI para evitar NullReferenceException
             _projectileMesh = Primitive.CreateCube(1f);
 
-            // 3. Compilacao dos Shaders
             ShaderProgram gameProgram = new ShaderProgram(
                 VertexShader.LoadFromFile("./assets/shaders/game.vert"),
                 FragmentShader.LoadFromFile("./assets/shaders/game.frag")
@@ -81,35 +87,47 @@ namespace RP
                 FragmentShader.LoadFromFile("./assets/shaders/post.frag")
             );
 
-            // 4. Configuracao dos Materiais
+            ShaderProgram thrusterProgram = new ShaderProgram(
+            VertexShader.LoadFromFile("./assets/shaders/thruster.vert"),
+            FragmentShader.LoadFromFile("./assets/shaders/game.frag")
+            );
+            _thrusterMaterial = new Material(thrusterProgram);
+
             _gameMaterial = new Material(gameProgram);
             _gameMaterial.cull = false;
 
             _postMaterial = new Material(postProgram);
             _postMaterial.SetTexture("u_Texture", _postTarget.Texture);
 
+
+
             CursorState = CursorState.Normal;
 
-            // Inicia o jogo criando os primeiros asteroides
             RestartGame();
         }
 
         private void RestartGame()
         {
             _isGameOver = false;
+            _score = 0;
+            _survivalTime = 0f;
+            _spawnTimer = 0f;
+            _spawnInterval = 4.0f;
 
-            // Reseta a Nave
+            Title = $"Asteroids OpenGL - Score: {_score} | Time: 0.0s";
+
             _shipTransform.position = Vector3.Zero;
             _shipTransform.rotation = Vector3.Zero;
             _shipVelocity = Vector3.Zero;
 
-            // Limpa listas de objetos antigos
+            _shipTransform.scale = new Vector3(0.5f, 0.5f, 0.5f);
+
             _shipDebris.Clear();
             _debrisVelocities.Clear();
             _projectiles.Clear();
             _asteroids.Clear();
 
-            // Recria os Asteroides com Zona Segura e Tamanhos Aleatorios
+            // Asteroides iniciais com Zona Segura
             for (int i = 0; i < 5; i++)
             {
                 Vector3 pos;
@@ -120,7 +138,7 @@ namespace RP
                         ((float)_random.NextDouble() * 2f - 1f) * _limitY,
                         0f
                     );
-                } while (pos.Length < 4.0f); // Zona segura (distancia > 4 da nave)
+                } while (pos.Length < 4.0f);
 
                 Vector3 vel = new Vector3(
                     ((float)_random.NextDouble() * 2f - 1f) * 3f,
@@ -128,9 +146,30 @@ namespace RP
                     0f
                 );
 
-                int randomSize = _random.Next(1, 4); // Sorteia entre Tamanho 1 e 3
+                int randomSize = _random.Next(1, 4);
                 _asteroids.Add(new Asteroid(pos, vel, randomSize));
             }
+        }
+
+        private void SpawnAsteroidAtEdge()
+        {
+            Vector3 pos = Vector3.Zero;
+            int side = _random.Next(0, 4); // 0=Cima, 1=Baixo, 2=Esquerda, 3=Direita
+
+            if (side == 0) pos = new Vector3(((float)_random.NextDouble() * 2f - 1f) * _limitX, _limitY + 1f, 0f);
+            else if (side == 1) pos = new Vector3(((float)_random.NextDouble() * 2f - 1f) * _limitX, -_limitY - 1f, 0f);
+            else if (side == 2) pos = new Vector3(-_limitX - 1f, ((float)_random.NextDouble() * 2f - 1f) * _limitY, 0f);
+            else pos = new Vector3(_limitX + 1f, ((float)_random.NextDouble() * 2f - 1f) * _limitY, 0f);
+
+            // Direciona levemente para o centro da tela
+            Vector3 vel = new Vector3(
+                ((float)_random.NextDouble() * 2f - 1f) * 2f - (pos.X * 0.1f),
+                ((float)_random.NextDouble() * 2f - 1f) * 2f - (pos.Y * 0.1f),
+                0f
+            );
+
+            int randomSize = _random.Next(2, 4);
+            _asteroids.Add(new Asteroid(pos, vel, randomSize));
         }
 
         protected override void OnUpdateFrame(FrameEventArgs args)
@@ -140,6 +179,10 @@ namespace RP
 
             if (!_isGameOver)
             {
+                // ATUALIZAR TEMPORIZADOR NA JANELA
+                _survivalTime += delta;
+                Title = $"Asteroids OpenGL - Score: {_score} | Time: {Math.Round(_survivalTime, 1)}s";
+
                 // --- NAVE: INPUT E FISICA ---
                 if (KeyboardState.IsKeyDown(Keys.A)) _shipTransform.rotation.Z += _shipRotationSpeed * delta;
                 if (KeyboardState.IsKeyDown(Keys.D)) _shipTransform.rotation.Z -= _shipRotationSpeed * delta;
@@ -158,6 +201,15 @@ namespace RP
                 if (_shipTransform.position.X < -_limitX) _shipTransform.position.X = _limitX;
                 if (_shipTransform.position.Y > _limitY) _shipTransform.position.Y = -_limitY;
                 if (_shipTransform.position.Y < -_limitY) _shipTransform.position.Y = _limitY;
+
+                // --- SPAWNER PROGRESSIVO ---
+                _spawnTimer += delta;
+                if (_spawnTimer >= _spawnInterval)
+                {
+                    _spawnTimer = 0f;
+                    if (_spawnInterval > 1.0f) _spawnInterval -= 0.1f;
+                    SpawnAsteroidAtEdge();
+                }
 
                 // --- PROJETEIS: ATIRAR ---
                 if (KeyboardState.IsKeyPressed(Keys.Space))
@@ -189,6 +241,13 @@ namespace RP
                             Asteroid destroyed = _asteroids[j];
                             _asteroids.RemoveAt(j);
 
+                            // Pontuacao
+                            if (destroyed.size == 3) _score += 20;
+                            else if (destroyed.size == 2) _score += 50;
+                            else _score += 100;
+
+                            Title = $"Asteroids OpenGL - Score: {_score} | Time: {Math.Round(_survivalTime, 1)}s";
+
                             if (destroyed.size > 1)
                             {
                                 int newSize = destroyed.size - 1;
@@ -214,6 +273,7 @@ namespace RP
                     if (distance < (shipRadius + asteroid.radius))
                     {
                         _isGameOver = true;
+                        Title = $"GAME OVER - Press 'R' to Restart | Score: {_score} | Time: {Math.Round(_survivalTime, 1)}s";
 
                         int debrisCount = _random.Next(3, 7);
                         for (int i = 0; i < debrisCount; i++)
@@ -243,7 +303,7 @@ namespace RP
             else
             {
                 // --- GAME OVER: ANIMAR DESTROCOS ---
-                _isThrusting = false; // Desliga o jato da nave principal
+                _isThrusting = false;
                 for (int i = 0; i < _shipDebris.Count; i++)
                 {
                     _shipDebris[i].position += _debrisVelocities[i] * delta;
@@ -251,14 +311,9 @@ namespace RP
                     _shipDebris[i].rotation.Y += 200f * delta;
                 }
 
-                // --- GAME OVER: REINICIAR ---
-                if (KeyboardState.IsKeyDown(Keys.R))
-                {
-                    RestartGame();
-                }
+                if (KeyboardState.IsKeyDown(Keys.R)) RestartGame();
             }
 
-            // --- ATUALIZAR ASTEROIDES (Ocorre sempre) ---
             foreach (var asteroid in _asteroids)
             {
                 asteroid.Update(delta, _limitX, _limitY);
@@ -277,43 +332,70 @@ namespace RP
 
             _gameMaterial.Use();
 
-            // ATIVANDO AS PROTEÇÕES MATEMÁTICAS 3D
             GL.Enable(EnableCap.CullFace);
             GL.Enable(EnableCap.DepthTest);
 
             // ==========================================
-            // 1. RENDERIZACAO DA NAVE
+            // 1. RENDERIZACAO DA NAVE, FOGO (OU DESTROCOS)
             // ==========================================
             _gameMaterial.Program.SetUniform("u_IsAsteroid", 0);
             _gameMaterial.Program.SetUniform("u_IsThrusting", _isThrusting ? 1 : 0);
 
             if (!_isGameOver)
             {
+                // Desenha a Nave
                 _shipTransform.Apply(_gameMaterial);
-
-                // Passada A: Desenha o contorno usando apenas as faces de trás do 3D
                 GL.CullFace(TriangleFace.Front);
                 _gameMaterial.Program.SetUniform("u_IsOutline", 1);
                 _shipMesh.Draw();
-
-                // Passada B: Desenha o miolo preto usando as faces da frente do 3D
                 GL.CullFace(TriangleFace.Back);
                 _gameMaterial.Program.SetUniform("u_IsOutline", 0);
                 _shipMesh.Draw();
+
+                // === NOVO: DESENHA O FOGO DO PROPULSOR (ESTILO VETOR E DINÂMICO) ===
+                if (_isThrusting)
+                {
+                    Transform fireTransform = new Transform();
+                    fireTransform.position = _shipTransform.position - _shipTransform.Up * 0.75f;
+                    fireTransform.rotation = _shipTransform.rotation;
+                    fireTransform.rotation.Z += 180f;
+
+                    float flickerY = 0.6f + (float)Math.Sin(_time * 40.0) * 0.2f;
+                    float flickerX = 0.45f + (float)Math.Cos(_time * 50.0) * 0.05f;
+                    fireTransform.scale = new Vector3(flickerX, flickerY, flickerX);
+
+                    // Calcula a dobra (Drift)
+                    Vector3 rightVector = new Vector3(_shipTransform.Up.Y, -_shipTransform.Up.X, 0f);
+                    float lateralDrift = Vector3.Dot(_shipVelocity, rightVector);
+
+                    // Aplica o material do thruster
+                    _thrusterMaterial.Use();
+                    _thrusterMaterial.Program.SetUniform("u_Drift", lateralDrift * -0.2f);
+                    fireTransform.Apply(_thrusterMaterial);
+
+                    // Renderiza (A base fixa na nave, a ponta dobra no shader)
+                    GL.CullFace(TriangleFace.Front);
+                    _thrusterMaterial.Program.SetUniform("u_IsOutline", 1);
+                    _debrisMesh.Draw();
+                    GL.CullFace(TriangleFace.Back);
+                    _thrusterMaterial.Program.SetUniform("u_IsOutline", 0);
+                    _debrisMesh.Draw();
+                }
             }
             else
             {
+                // ... (o foreach var debris in _shipDebris continua igualzinho aqui) ...
                 foreach (var debris in _shipDebris)
                 {
                     debris.Apply(_gameMaterial);
 
                     GL.CullFace(TriangleFace.Front);
                     _gameMaterial.Program.SetUniform("u_IsOutline", 1);
-                    _shipMesh.Draw();
+                    _debrisMesh.Draw();
 
                     GL.CullFace(TriangleFace.Back);
                     _gameMaterial.Program.SetUniform("u_IsOutline", 0);
-                    _shipMesh.Draw();
+                    _debrisMesh.Draw();
                 }
             }
 
@@ -352,6 +434,7 @@ namespace RP
                 asteroid.mesh.Draw();
             }
         }
+
         protected override void OnRenderFrame(FrameEventArgs args)
         {
             base.OnRenderFrame(args);
@@ -380,6 +463,36 @@ namespace RP
             _postTarget.Destroy();
             _postTarget = RenderTarget.CreateColor(Size.X, Size.Y);
             _postMaterial.SetTexture("u_Texture", _postTarget.Texture);
+        }
+
+        private Mesh CreateCustomShipMesh()
+        {
+            // ARRAY DE VERTICES
+            // Formato: Posicao XYZ, Normal XYZ, UV XY
+            float[] vertices = {
+            // Indice 0: Bico da Nave (Frente)
+                0.0f,  1.0f,  0.0f,    0f, 1f, 0f,    0.5f, 1.0f,
+            // Indice 1: Asa Esquerda (Tras)
+                -0.8f, -1.0f,  0.0f,   -1f, 0f, 0f,    0.0f, 0.0f,
+            // Indice 2: Asa Direita (Tras)
+                 0.8f, -1.0f,  0.0f,    1f, 0f, 0f,    1.0f, 0.0f,
+            // Indice 3: Cabine superior (Eixo Z positivo)
+                 0.0f, -0.6f,  0.4f,    0f, 0f, 1f,    0.5f, 0.5f,
+            // Indice 4: Barriga (Eixo Z negativo)
+                 0.0f, -0.6f, -0.4f,    0f, 0f,-1f,    0.5f, 0.5f
+        };
+
+            // ARRAY DE INDICES (Montando os triangulos ligando os pontos acima)
+            uint[] indices = {
+                0, 1, 3, // Triangulo Frontal Esquerdo Superior
+                0, 3, 2, // Triangulo Frontal Direito Superior
+                0, 2, 4, // Triangulo Frontal Direito Inferior
+                0, 4, 1, // Triangulo Frontal Esquerdo Inferior
+                1, 4, 3, // Turbina Esquerda (Parte de tras)
+                2, 3, 4  // Turbina Direita (Parte de tras)
+        };
+
+            return new Mesh(vertices, indices);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using OpenTK.Mathematics;
 using RP.Core;
 
@@ -7,27 +8,35 @@ namespace RP
     {
         public Transform transform;
         public Vector3 velocity;
-        public float lifespan = 1.2f; // Segundos até desaparecer se não acertar nada
+        public float lifespan = 1f;
 
         public Projectile(Vector3 pos, Vector3 dir)
         {
             transform = new Transform();
             transform.position = pos;
-            
-            // Deixa ele com cara de tiro laser (esticado no Y, fino no X e Z)
-            transform.scale = new Vector3(0.08f, 0.4f, 0.08f); 
-            
-            // Rotaciona o tiro para alinhar visualmente com a direção em que está indo
-            float angle = MathF.Atan2(dir.Y, dir.X) - (MathF.PI / 2f); 
+
+            transform.scale = new Vector3(0.10f, 0.5f, 0.10f);
+
+            float angle = MathF.Atan2(dir.Y, dir.X) - (MathF.PI / 2f);
             transform.rotation.Z = angle * (180f / MathF.PI);
-            
-            velocity = dir * 18f; // Velocidade alta do projétil
+
+            velocity = dir * 18f;
         }
 
         public void Update(float delta, float limitX, float limitY)
         {
             transform.position += velocity * delta;
             lifespan -= delta;
+
+            // EFEITO VISUAL: O projetil encolhe no eixo Y (comprimento) e X/Z (espessura) 
+            // conforme o seu tempo de vida (lifespan) chega perto de zero.
+            // O valor 1.2f e o tempo de vida total que definimos no construtor.
+            float lifePercentage = lifespan / 1f;
+            transform.scale = new Vector3(
+                0.10f * lifePercentage,
+                0.5f * lifePercentage,
+                0.10f * lifePercentage
+            );
 
             if (transform.position.X > limitX) transform.position.X = -limitX;
             if (transform.position.X < -limitX) transform.position.X = limitX;

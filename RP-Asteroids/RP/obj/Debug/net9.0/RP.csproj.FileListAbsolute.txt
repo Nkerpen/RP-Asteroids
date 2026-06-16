@@ -45,3 +45,4 @@ C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\obj\Debug\net9.0\re
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\obj\Debug\net9.0\RP.pdb
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\obj\Debug\net9.0\RP.genruntimeconfig.cache
 C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\obj\Debug\net9.0\ref\RP.dll
+C:\Users\nicol\Documents\GitHub\RP-Asteroids\RP-Asteroids\RP\bin\Debug\net9.0\assets\shaders\thruster.vert
