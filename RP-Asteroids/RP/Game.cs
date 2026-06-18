@@ -96,7 +96,7 @@ namespace RP
                 FragmentShader.LoadFromFile("./assets/shaders/game.frag")
             );
             _gameMaterial = new Material(gameProgram);
-            _gameMaterial.cull = false;
+            
 
             ShaderProgram thrusterProgram = new ShaderProgram(
                 VertexShader.LoadFromFile("./assets/shaders/thruster.vert"),
@@ -388,7 +388,7 @@ namespace RP
 
             _gameMaterial.Use();
             GL.Enable(EnableCap.CullFace); 
-            GL.Enable(EnableCap.DepthTest);
+            //GL.Enable(EnableCap.DepthTest);
 
             // --- 1. RENDERIZA NAVE OU DESTROÇOS ---
             _gameMaterial.Program.SetUniform("u_IsAsteroid", 0);

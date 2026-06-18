@@ -26,7 +26,7 @@ void main() {
 
     vec4 sceneColor = texture(u_Texture, curvedUv);
 
-    float scanlinePattern = sin(curvedUv.y * 750.0) * 0.02;
+    float scanlinePattern = sin(curvedUv.y * 550.0) * 0.02;
     sceneColor.rgb -= scanlinePattern;
 
     sceneColor.rgb *= 0.995 + 0.005 * sin(u_Time * 140.0);
