@@ -16,6 +16,7 @@ namespace RP
         // Elementos da Nave
         private Mesh _shipMesh;
         private Mesh _debrisMesh;
+        private Mesh _thrusterMesh;
         private Transform _shipTransform = new();
         private Vector3 _shipVelocity = Vector3.Zero;
         private float _shipRotationSpeed = 220f;
@@ -72,6 +73,7 @@ namespace RP
             //_shipMesh = Primitive.CreateCone(0.4f, 1.2f, 3);
             _shipMesh = CreateCustomShipMesh();
             _debrisMesh = Primitive.CreateCone(0.5f, 1.0f, 3);
+            _thrusterMesh = CreateSegmentedThruster(5);
             _postMesh = Primitive.CreatePost();
             _postTarget = RenderTarget.CreateColor(Size.X, Size.Y);
 
@@ -358,7 +360,7 @@ namespace RP
                     Transform fireTransform = new Transform();
                     fireTransform.position = _shipTransform.position - _shipTransform.Up * 0.75f;
                     fireTransform.rotation = _shipTransform.rotation;
-                    fireTransform.rotation.Z += 180f;
+                    //fireTransform.rotation.Z += 180f;
 
                     float flickerY = 0.6f + (float)Math.Sin(_time * 40.0) * 0.2f;
                     float flickerX = 0.45f + (float)Math.Cos(_time * 50.0) * 0.05f;
@@ -376,10 +378,10 @@ namespace RP
                     // Renderiza (A base fixa na nave, a ponta dobra no shader)
                     GL.CullFace(TriangleFace.Front);
                     _thrusterMaterial.Program.SetUniform("u_IsOutline", 1);
-                    _debrisMesh.Draw();
+                    _thrusterMesh.Draw();
                     GL.CullFace(TriangleFace.Back);
                     _thrusterMaterial.Program.SetUniform("u_IsOutline", 0);
-                    _debrisMesh.Draw();
+                    _thrusterMesh.Draw();
                 }
             }
             else
@@ -493,6 +495,54 @@ namespace RP
         };
 
             return new Mesh(vertices, indices);
+        }
+
+        private Mesh CreateSegmentedThruster(int verticalSegments = 5)
+        {
+            List<float> vertices = new();
+            List<uint> indices = new();
+
+            int sides = 3; // Mantém o visual de triângulo 3D
+            float baseRadius = 0.45f;
+
+            // 1. Gerar os vértices em fatias
+            for (int i = 0; i <= verticalSegments; i++)
+            {
+                float v = (float)i / verticalSegments; // Vai de 0.0 (Base) até 1.0 (Ponta)
+                float y = 0.5f - v; // Posiciona entre Y = 0.5 e Y = -0.5
+                float radius = baseRadius * (1.0f - v); // O raio diminui até virar 0 na ponta
+
+                for (int j = 0; j <= sides; j++)
+                {
+                    float u = (float)j / sides;
+                    float angle = u * MathF.Tau;
+                    float x = MathF.Sin(angle) * radius;
+                    float z = MathF.Cos(angle) * radius;
+
+                    // Posição XYZ, Normal XYZ simplificada, UV
+                    vertices.AddRange(new float[] { x, y, z });
+                    vertices.AddRange(new float[] { x, 0.2f, z });
+                    vertices.AddRange(new float[] { u, v });
+                }
+            }
+
+            // 2. Ligar os vértices criando os triângulos
+            int vertsPerRow = sides + 1;
+            for (int i = 0; i < verticalSegments; i++)
+            {
+                for (int j = 0; j < sides; j++)
+                {
+                    uint top1 = (uint)(i * vertsPerRow + j);
+                    uint top2 = top1 + 1;
+                    uint bot1 = (uint)((i + 1) * vertsPerRow + j);
+                    uint bot2 = bot1 + 1;
+
+                    indices.AddRange(new uint[] { top1, bot1, top2 });
+                    indices.AddRange(new uint[] { top2, bot1, bot2 });
+                }
+            }
+
+            return new Mesh(vertices.ToArray(), indices.ToArray());
         }
     }
 }
