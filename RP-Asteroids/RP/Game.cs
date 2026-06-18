@@ -23,6 +23,7 @@ namespace RP
         private float _shipThrust = 12f;
         private float _drag = 0.65f;
         private bool _isThrusting = false;
+        private float _visualDrift = 0f;
 
         // Estado do Jogo
         private bool _isGameOver = false;
@@ -198,6 +199,16 @@ namespace RP
                 _shipVelocity -= _shipVelocity * _drag * delta;
                 _shipTransform.position += _shipVelocity * delta;
 
+                Vector3 rightVector = new Vector3(_shipTransform.Up.Y, -_shipTransform.Up.X, 0f);
+                float targetDrift = Vector3.Dot(_shipVelocity, rightVector);
+
+                if (Math.Abs(targetDrift) < 0.3f)
+                {
+                    targetDrift = 0f;
+                }
+
+                _visualDrift = MathHelper.Lerp(_visualDrift, targetDrift, 200f * delta);
+
                 // --- NAVE: SCREEN WRAP ---
                 if (_shipTransform.position.X > _limitX) _shipTransform.position.X = -_limitX;
                 if (_shipTransform.position.X < -_limitX) _shipTransform.position.X = _limitX;
@@ -360,20 +371,20 @@ namespace RP
                     Transform fireTransform = new Transform();
                     fireTransform.position = _shipTransform.position - _shipTransform.Up * 0.75f;
                     fireTransform.rotation = _shipTransform.rotation;
-                    //fireTransform.rotation.Z += 180f;
+                    fireTransform.position.Z -= 0.1f;
 
                     float flickerY = 0.6f + (float)Math.Sin(_time * 40.0) * 0.2f;
                     float flickerX = 0.45f + (float)Math.Cos(_time * 50.0) * 0.05f;
                     fireTransform.scale = new Vector3(flickerX, flickerY, flickerX);
 
-                    // Calcula a dobra (Drift)
-                    Vector3 rightVector = new Vector3(_shipTransform.Up.Y, -_shipTransform.Up.X, 0f);
-                    float lateralDrift = Vector3.Dot(_shipVelocity, rightVector);
+                    _thrusterMaterial.Use();
+                    _thrusterMaterial.Program.SetUniform("u_Drift", _visualDrift * -0.025f);
+
+                    fireTransform.Apply(_thrusterMaterial);
+                    GL.CullFace(TriangleFace.Front);
 
                     // Aplica o material do thruster
                     _thrusterMaterial.Use();
-                    _thrusterMaterial.Program.SetUniform("u_Drift", lateralDrift * -0.2f);
-                    fireTransform.Apply(_thrusterMaterial);
 
                     // Renderiza (A base fixa na nave, a ponta dobra no shader)
                     GL.CullFace(TriangleFace.Front);

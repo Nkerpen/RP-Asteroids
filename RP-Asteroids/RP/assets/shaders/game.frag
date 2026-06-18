@@ -13,8 +13,7 @@ void main() {
         out_Color = vec4(1.0, 1.0, 1.0, 1.0); 
     } else {
         if (u_IsThruster == 1) {
-            // Se for o propulsor, pinta de Laranja Escaldante brilhante
-            out_Color = vec4(1.0, 0.4, 0.0, 1.0); 
+            out_Color = vec4(0.0, 0.0, 0.0, 1.0); 
         } else {
             vec3 lightDir = normalize(vec3(0.5, 1.0, 0.5));
             vec3 normal = normalize(f_Normal);
